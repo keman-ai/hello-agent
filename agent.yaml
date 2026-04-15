@@ -1,0 +1,33 @@
+apiVersion: a2h/v1
+kind: Agent
+
+metadata:
+  name: hello_agent
+  version: 0.1.0
+  displayName: Hello Agent
+
+runtime:
+  type: claude-code
+  entrypoint: run.sh
+  timeout: 300
+
+resources:
+  cpu: 1
+  memory: 1024
+  disk: 2048
+
+inputs:
+  - name: brief
+    type: text
+    required: true
+    label: What do you want the agent to say hello to?
+    maxLength: 500
+
+outputs:
+  - name: greeting
+    type: text
+    label: The generated greeting
+
+egress: []
+
+env: []
