@@ -1,20 +1,30 @@
 #!/usr/bin/env bash
-# Minimal seller entrypoint. Reads the buyer's brief from input.json and calls
-# Claude through the A2H LLM proxy (ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY are
-# pre-injected by the runner).
+# Hello Agent — v2 envelope compatible.
+# Reads user message from input.json (Agent Protocol v2 envelope),
+# calls Claude through the A2H LLM proxy, writes output.json.
 set -euo pipefail
 
 WORKSPACE="${A2H_WORKSPACE:-/workspace}"
-BRIEF=$(jq -r '.inputs.brief // ""' "$WORKSPACE/input.json")
+
+# Extract the first user message text from v2 envelope:
+# { "messages": [{ "role": "user", "content": [{ "type": "text", "text": "..." }] }] }
+USER_TEXT=$(jq -r '
+  .messages[]
+  | select(.role == "user")
+  | .content[]
+  | select(.type == "text")
+  | .text
+' "$WORKSPACE/input.json" | head -1)
+
 SKILL=$(cat /opt/agent/SKILL.md 2>/dev/null || echo "You are a friendly greeter.")
 
-printf '{"ts":"%s","msg":"received brief: %s"}\n' "$(date -Iseconds)" "${BRIEF:0:80}" \
+printf '{"ts":"%s","msg":"received: %s"}\n' "$(date -Iseconds)" "${USER_TEXT:0:80}" \
     >> "$WORKSPACE/progress.ndjson"
 
 REQ=$(jq -n --arg model "claude-sonnet-4-6" --argjson max 400 \
-          --arg system "$SKILL" --arg brief "$BRIEF" \
+          --arg system "$SKILL" --arg user_text "$USER_TEXT" \
     '{model:$model, max_tokens:$max, system:$system,
-      messages:[{role:"user", content:$brief}]}')
+      messages:[{role:"user", content:$user_text}]}')
 
 RESPONSE=$(curl -sS -X POST "$ANTHROPIC_BASE_URL/messages" \
     -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
@@ -23,7 +33,14 @@ RESPONSE=$(curl -sS -X POST "$ANTHROPIC_BASE_URL/messages" \
 
 GREETING=$(echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "(empty response)"')
 
-jq -n --arg greet "$GREETING" '{status:"success", outputs:{greeting:{type:"text", content:$greet}}}' \
-    > "$WORKSPACE/output.json"
+# v2 output envelope
+jq -n --arg greet "$GREETING" '{
+  "apiVersion": "a2h/v2",
+  "status": "success",
+  "messages": [{
+    "role": "assistant",
+    "content": [{"type": "text", "text": $greet}]
+  }]
+}' > "$WORKSPACE/output.json"
 
 printf '{"ts":"%s","msg":"done"}\n' "$(date -Iseconds)" >> "$WORKSPACE/progress.ndjson"
