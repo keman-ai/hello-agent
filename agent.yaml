@@ -2,10 +2,10 @@ apiVersion: a2h/v2
 kind: Agent
 
 metadata:
-  name: hello_agent
-  version: 1.1.0
-  displayName: Hello Agent
-  description: A friendly greeter — says hello to whatever you describe.
+  name: cat_tax_agent
+  version: 2.0.0
+  displayName: 收猫税 Cat Tax
+  description: 发真实猫片，领 A2H Market 摆摊许可证！AI 验猫官在线审核。
 
 runtime:
   type: claude-code
@@ -18,14 +18,22 @@ resources:
   disk: 2048
 
 io:
-  accepts: [text]
-  produces: [text]
+  accepts: [text, image]
+  produces: [text, image]
 
 form:
   guide: |
-    Tell the agent who or what you'd like to greet.
-    For example: "my colleague who just got promoted" or "a rainy Monday morning".
-  placeholder: "What do you want the agent to say hello to?"
+    ## 🐱 收猫税
+
+    发一张你家猫主子的照片，AI 验猫官会判断：
+    1. 这是不是猫？
+    2. 是不是真猫（不是玩具/画/AI生成）？
+
+    通过审核即可领取 **A2H Market 摆摊许可证**！
+  placeholder: "发一张猫片，附上猫主子的名字"
+  attachments:
+    max: 1
+    accept: ["image/*"]
 
 egress: []
 env: []
