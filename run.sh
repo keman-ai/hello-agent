@@ -18,18 +18,37 @@ USER_TEXT=$(jq -r '
 ' "$WORKSPACE/input.json")
 
 # ── Extract user image (if any) ─────────────────────────────────
+# Support both source.type="url" (presigned S3) and source.type="path" (local file)
+IMAGE_URL=$(jq -r '
+  [.messages[] | select(.role == "user") | .content[] | select(.type == "image") | .source.url]
+  | first // empty
+' "$WORKSPACE/input.json")
+
 IMAGE_PATH=$(jq -r '
   [.messages[] | select(.role == "user") | .content[] | select(.type == "image") | .source.path]
   | first // empty
 ' "$WORKSPACE/input.json")
 
+IMAGE_MIME=$(jq -r '
+  [.messages[] | select(.role == "user") | .content[] | select(.type == "image") | .source.mime]
+  | first // "image/jpeg"
+' "$WORKSPACE/input.json")
+
 HAS_IMAGE=false
-if [ -n "$IMAGE_PATH" ] && [ -f "$WORKSPACE/$IMAGE_PATH" ]; then
+IMG_B64=""
+IMG_MIME="${IMAGE_MIME:-image/jpeg}"
+
+if [ -n "$IMAGE_URL" ] && [ "$IMAGE_URL" != "null" ]; then
+    # Download from presigned URL
+    TMP_IMG="$WORKSPACE/_input_image.jpg"
+    if curl -sS -o "$TMP_IMG" "$IMAGE_URL" && [ -s "$TMP_IMG" ]; then
+        HAS_IMAGE=true
+        IMG_B64=$(base64 -w0 "$TMP_IMG" 2>/dev/null || base64 "$TMP_IMG")
+    fi
+elif [ -n "$IMAGE_PATH" ] && [ -f "$WORKSPACE/$IMAGE_PATH" ]; then
     HAS_IMAGE=true
-    # Base64 encode the image for Claude vision API
     IMG_B64=$(base64 -w0 "$WORKSPACE/$IMAGE_PATH" 2>/dev/null || base64 "$WORKSPACE/$IMAGE_PATH")
-    # Detect mime type
-    IMG_MIME=$(file -b --mime-type "$WORKSPACE/$IMAGE_PATH" 2>/dev/null || echo "image/jpeg")
+    IMG_MIME=$(file -b --mime-type "$WORKSPACE/$IMAGE_PATH" 2>/dev/null || echo "$IMG_MIME")
 fi
 
 printf '{"ts":"%s","msg":"has_image=%s text=%s"}\n' "$(date -Iseconds)" "$HAS_IMAGE" "${USER_TEXT:0:50}" \
