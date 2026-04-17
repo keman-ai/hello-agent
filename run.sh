@@ -113,23 +113,45 @@ printf '{"ts":"%s","msg":"verdict=%s"}\n' "$(date -Iseconds)" "$VERDICT" \
 COMMENT=$(echo "$REPLY_TEXT" | jq -r '.comment // "审核完毕"' 2>/dev/null || echo "审核完毕")
 
 if [ "$VERDICT" = "APPROVED" ]; then
-    # Copy permit to workspace outputs
-    mkdir -p "$WORKSPACE/outputs"
-    cp "$AGENT_DIR/stall-permit.png" "$WORKSPACE/outputs/stall-permit.png"
+    # Upload permit to S3 via presigned PUT URL from input.json
+    UPLOAD_URL=$(jq -r '._upload.slots["output-1.png"] // empty' "$WORKSPACE/input.json")
 
-    RESULT_TEXT="🎉 猫税审核通过！\n\n$COMMENT\n\n你的 A2H Market 摆摊许可证已发放，请查收附件！"
-
-    jq -n --arg text "$(printf "$RESULT_TEXT")" '{
-        "apiVersion": "a2h/v2",
-        "status": "success",
-        "messages": [{
-            "role": "assistant",
-            "content": [
-                {"type": "text", "text": $text},
-                {"type": "image", "source": {"type": "path", "path": "outputs/stall-permit.png", "mime": "image/png"}}
-            ]
-        }]
-    }' > "$WORKSPACE/output.json"
+    if [ -n "$UPLOAD_URL" ]; then
+        printf '{"ts":"%s","msg":"Uploading stall permit to S3..."}\n' "$(date -Iseconds)" \
+            >> "$WORKSPACE/progress.ndjson"
+        curl -sS -X PUT "$UPLOAD_URL" \
+            -H "Content-Type: image/png" \
+            --upload-file "$AGENT_DIR/stall-permit.png"
+        # Reference the uploaded URL in output
+        RESULT_TEXT="🎉 猫税审核通过！\n\n$COMMENT\n\n你的 A2H Market 摆摊许可证已发放，请查收附件！"
+        jq -n --arg text "$(printf "$RESULT_TEXT")" --arg url "$UPLOAD_URL" '{
+            "apiVersion": "a2h/v2",
+            "status": "success",
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": $text},
+                    {"type": "image", "source": {"type": "url", "url": $url, "mime": "image/png"}}
+                ]
+            }]
+        }' > "$WORKSPACE/output.json"
+    else
+        # Fallback: write to workspace (runner will read and upload)
+        mkdir -p "$WORKSPACE/outputs"
+        cp "$AGENT_DIR/stall-permit.png" "$WORKSPACE/outputs/stall-permit.png"
+        RESULT_TEXT="🎉 猫税审核通过！\n\n$COMMENT\n\n你的 A2H Market 摆摊许可证已发放，请查收附件！"
+        jq -n --arg text "$(printf "$RESULT_TEXT")" '{
+            "apiVersion": "a2h/v2",
+            "status": "success",
+            "messages": [{
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": $text},
+                    {"type": "image", "source": {"type": "path", "path": "outputs/stall-permit.png", "mime": "image/png"}}
+                ]
+            }]
+        }' > "$WORKSPACE/output.json"
+    fi
 else
     if [ "$VERDICT" = "NO_IMAGE" ]; then
         RESULT_TEXT="📷 没看到猫片哦！请发一张你家猫主子的照片，AI 验猫官等着审核呢～"
