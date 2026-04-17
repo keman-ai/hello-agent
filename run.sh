@@ -58,14 +58,18 @@ printf '{"ts":"%s","msg":"has_image=%s text=%s"}\n' "$(date -Iseconds)" "$HAS_IM
 SKILL=$(cat "$AGENT_DIR/SKILL.md" 2>/dev/null || echo "You judge cat photos. Respond in JSON.")
 
 # ── Build Claude API request ─────────────────────────────────────
+# Use temp files instead of --arg to avoid ARG_MAX limit on large base64 images.
+REQ_FILE="$WORKSPACE/_request.json"
+
 if [ "$HAS_IMAGE" = "true" ]; then
-    # Vision request: image + text
-    REQ=$(jq -n \
+    # Write base64 to a file, then use jq --rawfile to read it
+    echo -n "$IMG_B64" > "$WORKSPACE/_img_b64.txt"
+    jq -n \
         --arg model "claude-sonnet-4-6" \
         --argjson max 500 \
         --arg system "$SKILL" \
         --arg text "${USER_TEXT:-请判断这张照片}" \
-        --arg img_b64 "$IMG_B64" \
+        --rawfile img_b64 "$WORKSPACE/_img_b64.txt" \
         --arg img_mime "$IMG_MIME" \
     '{
         model: $model,
@@ -78,10 +82,9 @@ if [ "$HAS_IMAGE" = "true" ]; then
                 {type: "text", text: $text}
             ]
         }]
-    }')
+    }' > "$REQ_FILE"
 else
-    # Text-only request (no image provided)
-    REQ=$(jq -n \
+    jq -n \
         --arg model "claude-sonnet-4-6" \
         --argjson max 500 \
         --arg system "$SKILL" \
@@ -91,7 +94,7 @@ else
         max_tokens: $max,
         system: $system,
         messages: [{role: "user", content: $text}]
-    }')
+    }' > "$REQ_FILE"
 fi
 
 printf '{"ts":"%s","msg":"Calling Claude for cat inspection..."}\n' "$(date -Iseconds)" \
@@ -101,7 +104,7 @@ printf '{"ts":"%s","msg":"Calling Claude for cat inspection..."}\n' "$(date -Ise
 RESPONSE=$(curl -sS -X POST "$ANTHROPIC_BASE_URL/messages" \
     -H "Authorization: Bearer $ANTHROPIC_API_KEY" \
     -H 'Content-Type: application/json' \
-    --data "$REQ")
+    --data @"$REQ_FILE")
 
 REPLY_TEXT=$(echo "$RESPONSE" | jq -r '.content[0].text // .error.message // "(empty)"')
 VERDICT=$(echo "$REPLY_TEXT" | jq -r '.verdict // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
