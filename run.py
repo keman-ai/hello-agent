@@ -96,13 +96,14 @@ def main():
     # Build Claude messages
     if image_url and not image_url.startswith("file://"):
         # Download image and base64 encode
-        log("Downloading image from URL...")
+        log(f"Downloading image from URL ({len(image_url)} chars)...")
         try:
-            req = urllib.request.Request(image_url)
-            with urllib.request.urlopen(req, timeout=30) as resp:
+            req = urllib.request.Request(image_url, headers={"User-Agent": "a2h-agent/1.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
                 img_data = resp.read()
+                resp_code = resp.getcode()
             img_b64 = base64.b64encode(img_data).decode()
-            log(f"Image downloaded: {len(img_data)} bytes")
+            log(f"Image downloaded: {len(img_data)} bytes, http={resp_code}, b64_len={len(img_b64)}")
 
             messages = [{
                 "role": "user",
