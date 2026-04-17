@@ -21,12 +21,12 @@ USER_TEXT=$(jq -r '
 # Support both source.type="url" (presigned S3) and source.type="path" (local file)
 IMAGE_URL=$(jq -r '
   [.messages[] | select(.role == "user") | .content[] | select(.type == "image") | .source.url]
-  | first // empty
+  | .[0] // empty
 ' "$WORKSPACE/input.json")
 
 IMAGE_PATH=$(jq -r '
   [.messages[] | select(.role == "user") | .content[] | select(.type == "image") | .source.path]
-  | first // empty
+  | .[0] // empty
 ' "$WORKSPACE/input.json")
 
 IMAGE_MIME=$(jq -r '
@@ -51,7 +51,8 @@ elif [ -n "$IMAGE_PATH" ] && [ -f "$WORKSPACE/$IMAGE_PATH" ]; then
     IMG_MIME=$(file -b --mime-type "$WORKSPACE/$IMAGE_PATH" 2>/dev/null || echo "$IMG_MIME")
 fi
 
-printf '{"ts":"%s","msg":"has_image=%s text=%s"}\n' "$(date -Iseconds)" "$HAS_IMAGE" "${USER_TEXT:0:50}" \
+printf '{"ts":"%s","msg":"has_image=%s url_len=%d path=%s text=%s"}\n' \
+    "$(date -Iseconds)" "$HAS_IMAGE" "${#IMAGE_URL}" "$IMAGE_PATH" "${USER_TEXT:0:50}" \
     >> "$WORKSPACE/progress.ndjson"
 
 # ── Load system prompt ───────────────────────────────────────────
