@@ -93,31 +93,17 @@ def main():
     else:
         system_prompt = "You judge cat photos. Respond in JSON."
 
-    # Build Claude messages
+    # Build Claude messages — pass image URL directly, proxy handles download+base64
     if image_url and not image_url.startswith("file://"):
-        # Download image and base64 encode
-        log(f"Downloading image from URL ({len(image_url)} chars)...")
-        try:
-            req = urllib.request.Request(image_url, headers={"User-Agent": "a2h-agent/1.0"})
-            with urllib.request.urlopen(req, timeout=60) as resp:
-                img_data = resp.read()
-                resp_code = resp.getcode()
-            img_b64 = base64.b64encode(img_data).decode()
-            log(f"Image downloaded: {len(img_data)} bytes, http={resp_code}, b64_len={len(img_b64)}")
-
-            messages = [{
-                "role": "user",
-                "content": [
-                    {"type": "image", "source": {"type": "base64", "media_type": image_mime, "data": img_b64}},
-                    {"type": "text", "text": user_text or "请判断这张照片"},
-                ],
-            }]
-        except Exception as e:
-            log(f"Image download failed: {e}")
-            write_output(f"📷 图片下载失败：{e}\n\n请重新上传一张猫片试试。")
-            return
+        log(f"Passing image URL to LLM proxy ({len(image_url)} chars)")
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image", "source": {"type": "url", "url": image_url, "media_type": image_mime}},
+                {"type": "text", "text": user_text or "请判断这张照片"},
+            ],
+        }]
     elif image_url and image_url.startswith("file://"):
-        # Local file
         fpath = image_url[7:]
         with open(fpath, "rb") as f:
             img_data = f.read()
@@ -130,7 +116,6 @@ def main():
             ],
         }]
     else:
-        # No image
         messages = [{"role": "user", "content": user_text or "没有发送图片"}]
 
     # Call Claude
